@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kabadi-connect/contracts/schemas/payment.schema.json",
+  "title": "Payment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "transaction_id", "amount_inr", "method", "status", "reference", "confirmed_by_collector", "confirmed_by_recycler", "recorded_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" }, "transaction_id": { "type": "string", "format": "uuid" }, "amount_inr": { "$ref": "#/$defs/money" },
+    "method": { "enum": ["cash", "upi", "bank_transfer"] }, "status": { "enum": ["pending", "cash_collected", "upi_paid", "bank_transfer"] }, "reference": { "type": ["string", "null"] },
+    "confirmed_by_collector": { "type": "boolean" }, "confirmed_by_recycler": { "type": "boolean" }, "recorded_at": { "$ref": "#/$defs/timestamp" }
+  },
+  "$defs": { "money": { "type": "string", "pattern": "^-?(?:0|[1-9]\\d*)\\.\\d{2}$", "description": "Decimal INR serialized as a string; never a JSON number." }, "timestamp": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC timestamp." } }
+}

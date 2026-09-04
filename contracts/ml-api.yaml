@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: KabadiConnect ML Service API
+  version: 2.0.0
+  description: Frozen ML service contract. Monetary predictions are decimal strings.
+servers:
+  - url: http://localhost:8000
+paths:
+  /ml/predict-price:
+    post:
+      operationId: predictPrice
+      summary: Return AI-assisted indicative valuation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: Request features are implementation-internal; Section 2.5 freezes the response shape. }
+      responses:
+        '200':
+          description: Prediction
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [predicted_rate_inr_per_kg, predicted_total_inr, confidence, shap_breakdown]
+                properties:
+                  predicted_rate_inr_per_kg: { $ref: '#/components/schemas/Money' }
+                  predicted_total_inr: { $ref: '#/components/schemas/Money' }
+                  confidence: { type: number, minimum: 0, maximum: 1 }
+                  shap_breakdown:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [factor, contribution]
+                      properties:
+                        factor: { type: string }
+                        contribution: { type: number }
+  /ml/anomaly-check:
+    post:
+      operationId: anomalyCheck
+      summary: Return deterministic transaction anomaly assessment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: Request features are implementation-internal; Section 2.5 freezes the response shape. }
+      responses:
+        '200':
+          description: Risk assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [risk_score, risk_band, reasons]
+                properties:
+                  risk_score: { type: number, minimum: 0, maximum: 100 }
+                  risk_band: { $ref: '#/components/schemas/RiskBand' }
+                  reasons: { type: array, items: { type: string } }
+  /ml/health:
+    get:
+      operationId: mlHealth
+      responses:
+        '200': { description: ML service is healthy }
+components:
+  schemas:
+    Money:
+      type: string
+      pattern: '^-?(?:0|[1-9]\d*)\.\d{2}$'
+      description: Decimal INR serialized as a string; never a JSON number.
+    MaterialCategory:
+      type: string
+      enum: [crt, lcd_panel, pcb, cable, battery, motor, magnet_assembly, mixed_plastic, other]
+    RiskBand:
+      type: string
+      enum: [allow, monitor, verify, block]
