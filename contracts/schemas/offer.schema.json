@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kabadi-connect/contracts/schemas/offer.schema.json",
+  "title": "Offer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "lot_id", "recycler_id", "offered_rate_inr_per_kg", "offered_total_inr", "pickup_available", "status", "created_at", "expires_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" }, "lot_id": { "type": "string", "format": "uuid" }, "recycler_id": { "type": "string", "format": "uuid" },
+    "offered_rate_inr_per_kg": { "$ref": "#/$defs/money" }, "offered_total_inr": { "$ref": "#/$defs/money" }, "pickup_available": { "type": "boolean" },
+    "status": { "enum": ["pending", "accepted", "rejected", "expired"] }, "created_at": { "$ref": "#/$defs/timestamp" }, "expires_at": { "$ref": "#/$defs/timestamp" }
+  },
+  "$defs": { "money": { "type": "string", "pattern": "^-?(?:0|[1-9]\\d*)\\.\\d{2}$", "description": "Decimal INR serialized as a string; never a JSON number." }, "timestamp": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC timestamp." } }
+}

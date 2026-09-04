@@ -1,0 +1,205 @@
+openapi: 3.1.0
+info:
+  title: KabadiConnect API
+  version: 2.0.0
+  description: Frozen v2 REST contract. All timestamps are ISO 8601 UTC; all INR values are decimal strings.
+servers:
+  - url: '{API_BASE_URL}/v1'
+security:
+  - bearerAuth: []
+x-realtime-events:
+  offer:new:
+    audience: collector
+    payload: { type: object, required: [lot_id, offer_id], properties: { lot_id: { type: string, format: uuid }, offer_id: { type: string, format: uuid } } }
+  offer:accepted: { audience: relevant_recycler }
+  offer:rejected: { audience: relevant_recycler }
+  transaction:status_changed:
+    payload: { type: object, required: [transaction_id, status], properties: { transaction_id: { type: string, format: uuid }, status: { type: string, enum: [accepted, pickup_scheduled, handed_over, confirmed, paid, recycled, cancelled] } } }
+paths:
+  /auth/otp/request:
+    post:
+      security: []
+      operationId: requestOtp
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OtpRequest' } } } }
+      responses: { '200': { description: OTP requested, content: { application/json: { schema: { type: object, additionalProperties: false, required: [success], properties: { success: { type: boolean } } } } } } }
+  /auth/otp/verify:
+    post:
+      security: []
+      operationId: verifyOtp
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OtpVerifyRequest' } } } }
+      responses: { '200': { description: Authenticated, content: { application/json: { schema: { $ref: '#/components/schemas/AuthTokens' } } } } }
+  /users/me:
+    get:
+      operationId: getMe
+      responses: { '200': { description: Role-aware profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } } }
+    patch:
+      operationId: updateMe
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfileUpdate' } } } }
+      responses: { '200': { description: Updated role-aware profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } } }
+  /uploads/signed-upload-url:
+    post:
+      operationId: createSignedUploadUrl
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [file_name, content_type], properties: { file_name: { type: string }, content_type: { type: string } } } } } }
+      responses: { '200': { description: Private-bucket upload target, content: { application/json: { schema: { type: object, additionalProperties: false, required: [upload_url, storage_path], properties: { upload_url: { type: string, format: uri }, storage_path: { type: string } } } } } } }
+  /uploads/signed-read-url:
+    get:
+      operationId: createSignedReadUrl
+      parameters: [ { $ref: '#/components/parameters/StoragePath' } ]
+      responses: { '200': { description: Time-limited private-bucket read URL, content: { application/json: { schema: { type: object, additionalProperties: false, required: [read_url, expires_in], properties: { read_url: { type: string, format: uri }, expires_in: { type: integer, minimum: 1 } } } } } } }
+  /lots:
+    post:
+      operationId: createLot
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LotCreate' } } } }
+      responses: { '201': { description: Created lot with server valuation, content: { application/json: { schema: { $ref: '#/components/schemas/LotValuation' } } } } }
+    get:
+      operationId: listLots
+      parameters: [ { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: Lots, content: { application/json: { schema: { $ref: '#/components/schemas/LotList' } } } } }
+  /sync/lots:
+    post:
+      operationId: syncLots
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/LotCreate' } } } } } } }
+      responses: { '200': { description: Idempotent sync results keyed by client UUID, content: { application/json: { schema: { type: object, additionalProperties: false, required: [results], properties: { results: { type: array, items: { $ref: '#/components/schemas/SyncResult' } } } } } } } }
+  /lots/open:
+    get:
+      operationId: listOpenLots
+      summary: Authorized recycler browse of open lots in service area
+      parameters: [ { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: Open lots, content: { application/json: { schema: { $ref: '#/components/schemas/LotList' } } } } }
+  /lots/{id}:
+    get:
+      operationId: getLot
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: Lot, content: { application/json: { schema: { $ref: '#/components/schemas/Lot' } } } } }
+  /lots/{lotId}/offers:
+    post:
+      operationId: createOffer
+      summary: Authorized recycler submits an offer on an open lot
+      parameters: [ { $ref: '#/components/parameters/LotId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OfferCreate' } } } }
+      responses: { '201': { description: Offer, content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } } }
+    get:
+      operationId: listLotOffers
+      parameters: [ { $ref: '#/components/parameters/LotId' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: Offers on lot, content: { application/json: { schema: { $ref: '#/components/schemas/OfferList' } } } } }
+  /offers/{id}/accept:
+    patch:
+      operationId: acceptOffer
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: Accepted offer and created transaction, content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } } }
+  /offers/{id}/reject:
+    patch:
+      operationId: rejectOffer
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: Rejected offer, content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } } }
+  /prices:
+    get:
+      operationId: listPrices
+      parameters: [ { name: material_category, in: query, schema: { $ref: '#/components/schemas/MaterialCategory' } } ]
+      responses: { '200': { description: Current price records, content: { application/json: { schema: { $ref: '#/components/schemas/PriceList' } } } } }
+  /prices/history:
+    get:
+      operationId: getPriceHistory
+      parameters: [ { name: material_category, in: query, schema: { $ref: '#/components/schemas/MaterialCategory' } } ]
+      responses: { '200': { description: Historical price records, content: { application/json: { schema: { $ref: '#/components/schemas/PriceList' } } } } }
+  /recyclers/match:
+    get:
+      operationId: matchRecyclers
+      parameters: [ { name: lot_id, in: query, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Authorized ranked recycler candidates, content: { application/json: { schema: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/RecyclerMatch' } }, next_cursor: { type: [string, 'null'] } } } } } } }
+  /recyclers/{id}:
+    get:
+      operationId: getRecycler
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: Recycler, content: { application/json: { schema: { $ref: '#/components/schemas/Recycler' } } } } }
+  /transactions:
+    get:
+      operationId: listTransactions
+      parameters: [ { name: recycler_id, in: query, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: Transactions, content: { application/json: { schema: { $ref: '#/components/schemas/TransactionList' } } } } }
+  /transactions/{id}:
+    get:
+      operationId: getTransaction
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: Transaction, content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } } }
+  /transactions/{id}/status:
+    patch:
+      operationId: transitionTransactionStatus
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [status], properties: { status: { $ref: '#/components/schemas/TransactionStatus' } } } } } }
+      responses:
+        '200': { description: Transaction after valid immediate transition, content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } }
+        '409': { $ref: '#/components/responses/InvalidStateTransition' }
+  /transactions/{id}/risk:
+    get:
+      operationId: getTransactionRisk
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: Cached anomaly result, content: { application/json: { schema: { $ref: '#/components/schemas/RiskResult' } } } } }
+  /transactions/{id}/trace-events:
+    post:
+      operationId: createTraceEvent
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEventCreate' } } } }
+      responses: { '201': { description: Appended trace event, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEvent' } } } } }
+  /trace-events/{id}/confirm:
+    post:
+      operationId: confirmHandover
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [handover_reference_code], properties: { handover_reference_code: { type: string } } } } } }
+      responses: { '201': { description: Handover confirmation trace event, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEvent' } } } } }
+  /transactions/{id}/payments:
+    post:
+      operationId: recordPayment
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PaymentCreate' } } } }
+      responses: { '201': { description: Payment, content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } } }
+  /collectors/me/earnings:
+    get:
+      operationId: getMyEarnings
+      responses: { '200': { description: Collector earnings, content: { application/json: { schema: { type: object, additionalProperties: false, required: [total_earned_inr], properties: { total_earned_inr: { $ref: '#/components/schemas/Money' } } } } } } }
+  /safety-guides:
+    get:
+      operationId: listSafetyGuides
+      parameters: [ { name: language, in: query, schema: { type: string, enum: [hi, mr, en] } } ]
+      responses: { '200': { description: Safety guides, content: { application/json: { schema: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/SafetyGuide' } }, next_cursor: { type: [string, 'null'] } } } } } } }
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT } }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    LotId: { name: lotId, in: path, required: true, schema: { type: string, format: uuid } }
+    StoragePath: { name: storage_path, in: query, required: true, schema: { type: string } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+  responses:
+    InvalidStateTransition: { description: Invalid lifecycle transition, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { error: { code: INVALID_STATE_TRANSITION, message: Transition must be the immediate next state or cancelled before paid. } } } } }
+  schemas:
+    Lot: { $ref: './schemas/lot.schema.json' }
+    Offer: { $ref: './schemas/offer.schema.json' }
+    Transaction: { $ref: './schemas/transaction.schema.json' }
+    Payment: { $ref: './schemas/payment.schema.json' }
+    TraceEvent: { $ref: './schemas/trace_event.schema.json' }
+    Recycler: { $ref: './schemas/recycler.schema.json' }
+    UUID: { type: string, format: uuid }
+    Timestamp: { type: string, format: date-time, description: ISO 8601 UTC timestamp. }
+    Money: { type: string, pattern: '^-?(?:0|[1-9]\\d*)\\.\\d{2}$', description: Decimal INR serialized as a string; never a JSON number. }
+    MaterialCategory: { type: string, enum: [crt, lcd_panel, pcb, cable, battery, motor, magnet_assembly, mixed_plastic, other] }
+    TransactionStatus: { type: string, enum: [accepted, pickup_scheduled, handed_over, confirmed, paid, recycled, cancelled] }
+    Error: { type: object, additionalProperties: false, required: [error], properties: { error: { type: object, additionalProperties: false, required: [code, message], properties: { code: { type: string }, message: { type: string } } } } }
+    OtpRequest: { type: object, additionalProperties: false, required: [phone_number], properties: { phone_number: { type: string } } }
+    OtpVerifyRequest: { type: object, additionalProperties: false, required: [phone_number, otp], properties: { phone_number: { type: string }, otp: { type: string } } }
+    AuthTokens: { type: object, additionalProperties: false, required: [access_token, refresh_token, user_id, role, is_new_user], properties: { access_token: { type: string }, refresh_token: { type: string }, user_id: { $ref: '#/components/schemas/UUID' }, role: { type: string, enum: [collector, recycler, admin] }, is_new_user: { type: boolean } } }
+    UserProfile: { type: object, additionalProperties: false, required: [id, role, phone_number, preferred_language, created_at], properties: { id: { $ref: '#/components/schemas/UUID' }, role: { type: string, enum: [collector, recycler, admin] }, phone_number: { type: string }, preferred_language: { type: string, enum: [hi, mr, en] }, operating_location: { type: object, properties: { lat: { type: number }, lng: { type: number }, label: { type: string } }, required: [lat, lng, label] }, recycler_id: { $ref: '#/components/schemas/UUID' }, role_at_facility: { type: string, enum: [staff, owner] }, created_at: { $ref: '#/components/schemas/Timestamp' } } }
+    UserProfileUpdate: { type: object, additionalProperties: false, properties: { preferred_language: { type: string, enum: [hi, mr, en] }, operating_location: { type: object, properties: { lat: { type: number }, lng: { type: number }, label: { type: string } }, required: [lat, lng, label] } } }
+    LotCreate: { type: object, additionalProperties: false, required: [client_uuid, material_category, image_urls, estimated_weight_kg, weight_status, condition, source_type, location, created_by_actor], properties: { client_uuid: { $ref: '#/components/schemas/UUID' }, material_category: { $ref: '#/components/schemas/MaterialCategory' }, material_subcategory: { type: string }, description: { type: string }, image_urls: { type: array, items: { type: string } }, estimated_weight_kg: { type: number, minimum: 0 }, weight_status: { type: string, enum: [estimated, verified, pending] }, condition: { type: string, enum: [good, damaged, mixed] }, source_type: { type: string, enum: [household, aggregator, other] }, location: { type: object, required: [lat, lng], properties: { lat: { type: number }, lng: { type: number } } }, created_by_actor: { type: string, enum: [collector, field_facilitator] } } }
+    LotValuation: { allOf: [ { $ref: '#/components/schemas/Lot' }, { type: object, required: [price_breakdown], properties: { price_breakdown: { type: array, items: { type: object, additionalProperties: true } } } } ] }
+    LotList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/Lot' } }, next_cursor: { type: [string, 'null'] } } }
+    OfferCreate: { type: object, additionalProperties: false, required: [offered_rate_inr_per_kg, offered_total_inr, pickup_available, expires_at], properties: { offered_rate_inr_per_kg: { $ref: '#/components/schemas/Money' }, offered_total_inr: { $ref: '#/components/schemas/Money' }, pickup_available: { type: boolean }, expires_at: { $ref: '#/components/schemas/Timestamp' } } }
+    OfferList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/Offer' } }, next_cursor: { type: [string, 'null'] } } }
+    TransactionList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }, next_cursor: { type: [string, 'null'] } } }
+    PaymentCreate: { type: object, additionalProperties: false, required: [amount_inr, method, status, confirmed_by_collector, confirmed_by_recycler], properties: { amount_inr: { $ref: '#/components/schemas/Money' }, method: { type: string, enum: [cash, upi, bank_transfer] }, status: { type: string, enum: [pending, cash_collected, upi_paid, bank_transfer] }, reference: { type: [string, 'null'] }, confirmed_by_collector: { type: boolean }, confirmed_by_recycler: { type: boolean } } }
+    TraceEventCreate: { type: object, additionalProperties: false, required: [event_type, photo_urls, gps, timestamp], properties: { event_type: { type: string, enum: [lot_created, offer_accepted, pickup_started, handover_photo, handover_confirmed, payment_recorded, recycled_confirmed] }, photo_urls: { type: array, items: { type: string } }, gps: { type: object, required: [lat, lng], properties: { lat: { type: number }, lng: { type: number } } }, timestamp: { $ref: '#/components/schemas/Timestamp' } } }
+    SyncResult: { type: object, additionalProperties: false, required: [client_uuid, server_id, status], properties: { client_uuid: { $ref: '#/components/schemas/UUID' }, server_id: { $ref: '#/components/schemas/UUID' }, status: { type: string } } }
+    PriceRecord: { type: object, additionalProperties: false, required: [id, material_category, material_subcategory, location, date, buying_rate_inr_per_kg, market_range_low_inr_per_kg, market_range_high_inr_per_kg, recycler_id, source], properties: { id: { $ref: '#/components/schemas/UUID' }, material_category: { $ref: '#/components/schemas/MaterialCategory' }, material_subcategory: { type: string }, location: { type: string }, date: { type: string, format: date }, buying_rate_inr_per_kg: { $ref: '#/components/schemas/Money' }, market_range_low_inr_per_kg: { $ref: '#/components/schemas/Money' }, market_range_high_inr_per_kg: { $ref: '#/components/schemas/Money' }, recycler_id: { type: [string, 'null'], format: uuid }, source: { type: string, enum: [seed, live] } } }
+    PriceList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/PriceRecord' } }, next_cursor: { type: [string, 'null'] } } }
+    RecyclerMatch: { type: object, additionalProperties: false, required: [recycler, score, breakdown], properties: { recycler: { $ref: '#/components/schemas/Recycler' }, score: { type: number }, breakdown: { type: object, additionalProperties: { type: number } } } }
+    RiskResult: { type: object, additionalProperties: false, required: [risk_score, risk_band, reasons], properties: { risk_score: { type: number, minimum: 0, maximum: 100 }, risk_band: { type: string, enum: [allow, monitor, verify, block] }, reasons: { type: array, items: { type: string } } } }
+    SafetyGuide: { type: object, additionalProperties: false, required: [id, title_hi, title_mr, icon_key, audio_key, image_url], properties: { id: { $ref: '#/components/schemas/UUID' }, title_hi: { type: string }, title_mr: { type: string }, icon_key: { type: string }, audio_key: { type: string }, image_url: { type: string } } }

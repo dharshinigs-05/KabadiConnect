@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kabadi-connect/contracts/schemas/transaction.schema.json",
+  "title": "Transaction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "client_uuid", "lot_id", "offer_id", "collector_id", "recycler_id", "agreed_rate_inr_per_kg", "final_weight_kg", "final_total_inr", "status", "created_at", "updated_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" }, "client_uuid": { "type": "string", "format": "uuid" }, "lot_id": { "type": "string", "format": "uuid" }, "offer_id": { "type": "string", "format": "uuid" }, "collector_id": { "type": "string", "format": "uuid" }, "recycler_id": { "type": "string", "format": "uuid" },
+    "agreed_rate_inr_per_kg": { "$ref": "#/$defs/money" }, "final_weight_kg": { "type": ["number", "null"], "minimum": 0 }, "final_total_inr": { "anyOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+    "status": { "enum": ["accepted", "pickup_scheduled", "handed_over", "confirmed", "paid", "recycled", "cancelled"] }, "created_at": { "$ref": "#/$defs/timestamp" }, "updated_at": { "$ref": "#/$defs/timestamp" }
+  },
+  "$defs": { "money": { "type": "string", "pattern": "^-?(?:0|[1-9]\\d*)\\.\\d{2}$", "description": "Decimal INR serialized as a string; never a JSON number." }, "timestamp": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC timestamp." } }
+}
