@@ -1,6 +1,7 @@
 import { query } from '../lib/db.js';
 import { env } from '../config/env.js';
 import { mapRecycler } from '../mappers/index.js';
+import { forbidden } from '../errors/AppError.js';
 import type { LotRow, RecyclerRow } from '../types/contracts.js';
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -20,11 +21,15 @@ function normalizeScore(value: number, min: number, max: number): number {
   return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
-export async function matchRecyclersForLot(lotId: string) {
+export async function matchRecyclersForLot(lotId: string, user: { role: string; id: string }) {
   const lotResult = await query<LotRow>('SELECT * FROM lots WHERE id = $1', [lotId]);
   const lot = lotResult.rows[0];
   if (!lot) {
     return [];
+  }
+
+  if (user.role === 'collector' && lot.collector_id !== user.id) {
+    throw forbidden('Access denied to this lot');
   }
 
   const recyclersResult = await query<RecyclerRow>(
@@ -62,7 +67,7 @@ export async function matchRecyclersForLot(lotId: string) {
       score: 0,
       breakdown: {},
       distanceKm,
-      ...( { _rate: rate } as { _rate: number }),
+      ...({ _rate: rate } as { _rate: number }),
     });
   }
 
@@ -83,7 +88,7 @@ export async function matchRecyclersForLot(lotId: string) {
     const distanceScore = Math.max(0, 1 - entry.distanceKm / radius);
     const materialCompatibilityScore =
       lot.material_subcategory &&
-      recyclerRow.materials_accepted.includes(lot.material_category)
+        recyclerRow.materials_accepted.includes(lot.material_category)
         ? 1
         : 0.7;
     const pickupServiceFitScore = recyclerRow.pickup_available ? 1 : 0.4;

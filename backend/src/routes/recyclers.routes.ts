@@ -8,14 +8,14 @@ import type { RecyclerRow } from '../types/contracts.js';
 
 export const recyclersRouter = Router();
 
-recyclersRouter.get('/match', authenticate, async (req, res, next) => {
+recyclersRouter.get('/match', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const lotId = req.query.lot_id as string;
     if (!lotId) {
       res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'lot_id is required' } });
       return;
     }
-    const items = await matchRecyclersForLot(lotId);
+    const items = await matchRecyclersForLot(lotId, req.user!);
     res.json({ items, next_cursor: null });
   } catch (error) {
     next(error);

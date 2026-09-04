@@ -7,7 +7,7 @@ import {
   forbidden,
   notFound,
 } from '../errors/AppError.js';
-import { multiplyMoney, parseMoney } from '../lib/money.js';
+import { multiplyMoney, parseMoney, moneyEquals } from '../lib/money.js';
 import { checkAnomaly } from '../services/ml.adapter.js';
 import type { AuthUser } from '../middleware/auth.js';
 import type { PaymentRow, TraceEventRow, TransactionRow } from '../types/contracts.js';
@@ -73,7 +73,7 @@ export async function listTransactions(user: AuthUser, recyclerId?: string, curs
       throw forbidden('Recycler mapping required');
     }
     sql += ` AND recycler_id = $${paramIdx}`;
-    params.push(recyclerId ?? user.recyclerId);
+    params.push(user.recyclerId);
     paramIdx++;
   } else if (recyclerId) {
     sql += ` AND recycler_id = $${paramIdx}`;
@@ -192,6 +192,9 @@ export async function createTraceEvent(
   let recordHash: string | null = null;
 
   if (input.event_type === 'handover_photo') {
+    if (tx.status !== 'pickup_scheduled') {
+      throw conflict('Transaction must be in pickup_scheduled state to record handover', 'INVALID_STATE_TRANSITION');
+    }
     handoverCode = generateHandoverCode();
     recordHash = generateRecordHash({
       transaction_id: transactionId,
@@ -266,6 +269,18 @@ export async function confirmHandover(
   }
 
   const tx = await getTransactionRow(event.transaction_id);
+  if (tx.status !== 'handed_over') {
+    throw conflict('Transaction is not in handed_over state', 'INVALID_STATE_TRANSITION');
+  }
+
+  const existingConfirm = await query<TraceEventRow>(
+    'SELECT id FROM trace_events WHERE transaction_id = $1 AND event_type = $2',
+    [tx.id, 'handover_confirmed']
+  );
+  if (existingConfirm.rows.length > 0) {
+    throw conflict('Handover already confirmed');
+  }
+
   if (tx.recycler_id !== user.recyclerId) {
     throw forbidden('Recycler not authorized for this transaction');
   }
@@ -298,8 +313,21 @@ export async function recordPayment(transactionId: string, user: AuthUser, input
   const tx = await getTransactionRow(transactionId);
   await assertTransactionAccess(tx, user);
 
+  if (tx.status === 'paid' || tx.status === 'recycled') {
+    throw conflict('Transaction already paid');
+  }
+
   if (tx.status !== 'confirmed') {
     throw conflict('Payment requires a confirmed transaction');
+  }
+
+  if (tx.final_total_inr === null) {
+    throw conflict('Transaction total not calculated');
+  }
+  const paymentAmount = parseMoney(input.amount_inr);
+  const totalAmount = parseMoney(tx.final_total_inr);
+  if (!moneyEquals(paymentAmount.toFixed(2), totalAmount.toFixed(2))) {
+    throw badRequest('Payment amount must equal transaction final total');
   }
 
   if (input.method !== 'cash' && !input.reference) {

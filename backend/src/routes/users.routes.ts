@@ -91,10 +91,17 @@ safetyGuidesRouter.get('/', async (req, res, next) => {
   try {
     const language = req.query.language as string | undefined;
     const result = await query<SafetyGuideRow>('SELECT * FROM safety_guides ORDER BY title_en');
-    let items = result.rows.map(mapSafetyGuide);
-    if (language === 'hi' || language === 'mr') {
-      items = items;
-    }
+    const items = result.rows.map((row) => {
+      const base = mapSafetyGuide(row);
+      // Return language-appropriate title as the primary "title" field
+      if (language === 'hi') {
+        return { ...base, title: row.title_hi };
+      } else if (language === 'mr') {
+        return { ...base, title: row.title_mr };
+      } else {
+        return { ...base, title: row.title_en };
+      }
+    });
     res.json({ items, next_cursor: null });
   } catch (error) {
     next(error);

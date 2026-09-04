@@ -47,5 +47,12 @@ export function useMockMl(): boolean {
 }
 
 export function useMockAuth(): boolean {
-  return env.USE_MOCK_AUTH || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY;
+  const mock = env.USE_MOCK_AUTH || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY;
+  if (mock && env.NODE_ENV === 'production') {
+    throw new Error(
+      'FATAL: USE_MOCK_AUTH is enabled but NODE_ENV=production. ' +
+      'Set USE_MOCK_AUTH=false and provide real Supabase credentials.'
+    );
+  }
+  return mock;
 }

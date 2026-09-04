@@ -162,36 +162,30 @@ export async function listOpenLots(user: AuthUser, cursor?: string) {
     throw forbidden('Recycler is not authorized');
   }
 
+  const materials = recycler.materials_accepted;
+  if (materials.length === 0) {
+    return { items: [], next_cursor: null };
+  }
+
+  // Fix 8: filter by material category at the DB level (before pagination)
   const decoded = decodeCursor(cursor);
-  const params: unknown[] = ['open', PAGE_SIZE + 1];
-  let sql = `SELECT * FROM lots WHERE status = $1`;
+  const params: unknown[] = ['open', materials, PAGE_SIZE + 1];
+  let sql = `SELECT * FROM lots WHERE status = $1 AND material_category = ANY($2::text[])`;
   if (decoded) {
     params.push(decoded.createdAt, decoded.id);
-    sql += ` AND (created_at, id) < ($3::timestamptz, $4::uuid)`;
+    sql += ` AND (created_at, id) < ($4::timestamptz, $5::uuid)`;
   }
-  sql += ` ORDER BY created_at DESC, id DESC LIMIT $2`;
+  sql += ` ORDER BY created_at DESC, id DESC LIMIT $3`;
 
   const result = await query<LotRow>(sql, params);
-
-  const filtered: LotRow[] = [];
-  for (const lot of result.rows) {
-    if (!recycler.materials_accepted.includes(lot.material_category)) {
-      continue;
-    }
-    filtered.push(lot);
-    if (filtered.length >= PAGE_SIZE + 1) {
-      break;
-    }
-  }
-
-  const page = filtered.slice(0, PAGE_SIZE);
+  const rows = result.rows.slice(0, PAGE_SIZE);
   const items = await Promise.all(
-    page.map(async (row) => mapLot(row, await getLotImageUrls(row.id))),
+    rows.map(async (row) => mapLot(row, await getLotImageUrls(row.id))),
   );
 
   const next =
-    filtered.length > PAGE_SIZE
-      ? encodeCursor(page[page.length - 1].created_at, page[page.length - 1].id)
+    result.rows.length > PAGE_SIZE
+      ? encodeCursor(rows[rows.length - 1].created_at, rows[rows.length - 1].id)
       : null;
 
   return { items, next_cursor: next };
@@ -202,7 +196,14 @@ async function assertLotAccess(lot: LotRow, user: AuthUser): Promise<void> {
     return;
   }
   if (user.role === 'recycler' && lot.status === 'open') {
-    return;
+    // Fix 7: require authorization before recycler can access lot detail
+    if (!user.recyclerId) throw forbidden('Recycler mapping required');
+    const r = await query<{ authorization_status: string }>(
+      'SELECT authorization_status FROM recyclers WHERE id = $1',
+      [user.recyclerId],
+    );
+    if (r.rows[0]?.authorization_status === 'authorized') return;
+    throw forbidden('Recycler is not authorized to access lot data');
   }
   if (user.role === 'admin') {
     return;
