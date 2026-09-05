@@ -1,0 +1,22 @@
+{
+  "name": "kabadiconnect-collector",
+  "private": true,
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "scripts": { "start": "expo start --dev-client", "android": "expo run:android", "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "latest",
+    "expo": "latest",
+    "expo-dev-client": "latest",
+    "expo-crypto": "latest",
+    "expo-file-system": "latest",
+    "expo-image-manipulator": "latest",
+    "expo-image-picker": "latest",
+    "expo-location": "latest",
+    "expo-router": "latest",
+    "react": "latest",
+    "react-native": "latest",
+    "react-native-fast-tflite": "latest"
+  },
+  "devDependencies": { "@types/react": "latest", "typescript": "latest" }
+}

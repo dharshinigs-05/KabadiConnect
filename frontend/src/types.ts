@@ -1,0 +1,9 @@
+export type Role = 'collector' | 'recycler' | 'admin';
+export type Material = 'crt' | 'lcd_panel' | 'pcb' | 'cable' | 'battery' | 'motor' | 'magnet_assembly' | 'mixed_plastic' | 'other';
+export type TransactionStatus = 'accepted' | 'pickup_scheduled' | 'handed_over' | 'confirmed' | 'paid' | 'recycled' | 'cancelled';
+export interface Session { access_token: string; refresh_token: string; user_id: string; role: Role; is_new_user: boolean }
+export interface Lot { id: string; client_uuid: string; material_category: Material; material_subcategory?: string; image_urls: string[]; estimated_weight_kg: number; verified_weight_kg?: number | null; condition: 'good' | 'damaged' | 'mixed'; source_type: 'household' | 'aggregator' | 'other'; location: { lat: number; lng: number }; status: string; estimated_value_total_inr?: string | null; created_at: string }
+export interface Offer { id: string; lot_id: string; recycler_id: string; offered_rate_inr_per_kg: string; offered_total_inr: string; pickup_available: boolean; status: 'pending' | 'accepted' | 'rejected' | 'expired'; expires_at: string; created_at: string }
+export interface Transaction { id: string; lot_id: string; offer_id: string; collector_id: string; recycler_id: string; agreed_rate_inr_per_kg: string; final_weight_kg: number | null; final_total_inr: string | null; status: TransactionStatus; created_at: string; updated_at: string }
+export interface Price { id: string; material_category: Material; material_subcategory: string; location: string; buying_rate_inr_per_kg: string; market_range_low_inr_per_kg: string; market_range_high_inr_per_kg: string; date: string }
+export interface LotDraft { client_uuid: string; material_category: Material; image_urls: string[]; estimated_weight_kg: number; weight_status: 'estimated'; condition: 'good' | 'damaged' | 'mixed'; source_type: 'household' | 'aggregator' | 'other'; location: { lat: number; lng: number }; created_by_actor: 'collector' }

@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "KabadiConnect Collector",
+    "slug": "kabadiconnect-collector",
+    "scheme": "kabadiconnect",
+    "orientation": "portrait",
+    "plugins": ["expo-router", "expo-image-picker", "expo-location", "expo-dev-client"],
+    "android": { "package": "org.kabadiconnect.collector" },
+    "experiments": { "typedRoutes": true }
+  }
+}
