@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 
 const queueKey = 'kc-native-pending-lots';
-const imageDirectory = `${FileSystem.documentDirectory}pending-lot-images/`;
+const imageDirectory = `${FileSystem.Paths.document}pending-lot-images/`;
 
 export type PendingLot = {
   client_uuid: string;
