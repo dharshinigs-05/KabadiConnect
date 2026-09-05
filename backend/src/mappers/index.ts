@@ -109,7 +109,7 @@ export function mapTraceEvent(row: TraceEventRow, photoUrls: string[] = []) {
     lot_id: row.lot_id,
     event_type: row.event_type,
     photo_urls: photoUrls,
-    gps: row.gps ?? { lat: 0, lng: 0 },
+    gps: row.gps,
     timestamp: toIso(row.timestamp)!,
     actor_user_id: row.actor_user_id,
     handover_reference_code: row.handover_reference_code,
@@ -127,7 +127,7 @@ export function mapRecycler(row: RecyclerRow) {
   return {
     id: row.id,
     name: row.name,
-    facility_location: row.facility_location ?? { lat: 0, lng: 0, address: '' },
+    facility_location: row.facility_location,
     materials_accepted: row.materials_accepted,
     authorization_id: row.authorization_id ?? '',
     authorization_status: row.authorization_status,

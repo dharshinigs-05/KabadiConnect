@@ -116,6 +116,9 @@ export async function transitionStatus(
   if (['pickup_scheduled', 'handed_over', 'confirmed', 'paid'].includes(newStatus)) {
     throw conflict('Use the workflow endpoint for this lifecycle transition', 'INVALID_STATE_TRANSITION');
   }
+  if (newStatus === 'recycled' && (user.role !== 'recycler' || user.recyclerId !== tx.recycler_id)) {
+    throw forbidden('Only the authorized recycler can mark a transaction recycled');
+  }
 
   const allowed = isValidTransactionTransition(tx.status, newStatus);
   if (!allowed) {
@@ -506,6 +509,9 @@ export async function confirmHandover(
 }
 
 export async function recordPayment(transactionId: string, user: AuthUser, input: PaymentInput) {
+  if (user.role !== 'recycler' || !user.recyclerId) {
+    throw forbidden('Only an authorized recycler can record payment');
+  }
   const tx = await getTransactionRow(transactionId);
   await assertTransactionAccess(tx, user);
 
