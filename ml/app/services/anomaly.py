@@ -1,7 +1,7 @@
 import joblib
 import pandas as pd
 import logging
-from .schemas import AnomalyCheckRequest, AnomalyCheckResponse
+from app.schemas import AnomalyCheckRequest, AnomalyCheckResponse
 import os
 
 logger = logging.getLogger(__name__)

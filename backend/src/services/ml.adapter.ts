@@ -61,11 +61,16 @@ export async function predictPrice(features: {
     return mockPredictPrice(features);
   }
 
+  const mlPayload = {
+    ...features,
+    weight_kg: features.estimated_weight_kg,
+  };
+
   try {
     const response = await fetch(`${env.ML_SERVICE_URL}/ml/predict-price`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(features),
+      body: JSON.stringify(mlPayload),
       signal: AbortSignal.timeout(5000),
     });
 
@@ -96,11 +101,18 @@ export async function checkAnomaly(features: Record<string, unknown>): Promise<A
     };
   }
 
+  const mlPayload = {
+    material_category: features.material_category,
+    weight_kg: Number(features.final_weight_kg ?? features.estimated_weight_kg ?? 0),
+    rate_inr: Number(features.agreed_rate_inr_per_kg ?? 0),
+    total_inr: Number(features.final_total_inr ?? 0),
+  };
+
   try {
     const response = await fetch(`${env.ML_SERVICE_URL}/ml/anomaly-check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(features),
+      body: JSON.stringify(mlPayload),
       signal: AbortSignal.timeout(5000),
     });
 

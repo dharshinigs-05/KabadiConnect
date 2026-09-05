@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import shap
 import logging
-from .schemas import PricePredictionRequest, PricePredictionResponse, ShapBreakdown
+from app.schemas import PricePredictionRequest, PricePredictionResponse, ShapBreakdown
 import os
 from decimal import Decimal, ROUND_HALF_UP
 
