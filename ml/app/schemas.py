@@ -2,8 +2,13 @@ from pydantic import BaseModel, Field, field_validator
 import re
 from typing import List, Literal
 
+MATERIAL_CATEGORIES = Literal[
+    'crt', 'lcd_panel', 'pcb', 'cable', 'battery', 'motor',
+    'magnet_assembly', 'mixed_plastic', 'other'
+]
+
 class PricePredictionRequest(BaseModel):
-    material_category: str
+    material_category: MATERIAL_CATEGORIES
     condition: str
     weight_kg: float
 
@@ -24,6 +29,7 @@ class PricePredictionResponse(BaseModel):
     predicted_rate_inr_per_kg: str = Field(..., description="Decimal string, e.g. 132.50")
     predicted_total_inr: str = Field(..., description="Decimal string, e.g. 500.00")
     confidence: float = Field(..., ge=0.0, le=1.0)
+    model_version: str
     shap_breakdown: List[ShapBreakdown]
 
     @field_validator('predicted_rate_inr_per_kg', 'predicted_total_inr')
@@ -34,7 +40,7 @@ class PricePredictionResponse(BaseModel):
         return v
 
 class AnomalyCheckRequest(BaseModel):
-    material_category: str
+    material_category: MATERIAL_CATEGORIES
     weight_kg: float
     rate_inr: float
     total_inr: float

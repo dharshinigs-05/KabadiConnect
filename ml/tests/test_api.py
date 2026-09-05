@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from app.main import app
+from app.main import anomaly_detector, price_predictor
 
 client = TestClient(app)
 
@@ -7,6 +8,12 @@ def test_health():
     res = client.get("/ml/health")
     assert res.status_code == 200
     assert res.json() == {"status": "ML service is healthy"}
+
+def test_trained_models_are_loaded():
+    assert price_predictor.model_path.exists()
+    assert price_predictor.pipeline is not None
+    assert anomaly_detector.model_path.exists()
+    assert anomaly_detector.pipeline is not None
 
 def test_predict_price_valid():
     res = client.post("/ml/predict-price", json={
@@ -19,6 +26,7 @@ def test_predict_price_valid():
     assert "predicted_rate_inr_per_kg" in data
     assert "predicted_total_inr" in data
     assert "confidence" in data
+    assert data["model_version"] == "xgboost_price_v1"
     assert "shap_breakdown" in data
     assert isinstance(data["shap_breakdown"], list)
 
@@ -30,14 +38,22 @@ def test_predict_price_invalid_weight():
     })
     assert res.status_code == 422 # Pydantic validation error
 
-def test_predict_price_fallback():
-    # If we pass a material that's not well-represented, it still safely returns format
+def test_predict_price_invalid_material_category():
     res = client.post("/ml/predict-price", json={
         "material_category": "unknown_material",
         "condition": "good",
         "weight_kg": 10.0
     })
-    assert res.status_code == 200
+    assert res.status_code == 422
+
+def test_anomaly_check_invalid_material_category():
+    res = client.post("/ml/anomaly-check", json={
+        "material_category": "unknown_material",
+        "weight_kg": 2.5,
+        "rate_inr": 135.00,
+        "total_inr": 337.50
+    })
+    assert res.status_code == 422
 
 def test_anomaly_check_normal():
     res = client.post("/ml/anomaly-check", json={

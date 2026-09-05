@@ -2,19 +2,19 @@ import joblib
 import pandas as pd
 import logging
 from app.schemas import AnomalyCheckRequest, AnomalyCheckResponse
-import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 class AnomalyDetector:
     def __init__(self):
-        self.model_path = 'ml/models/anomaly/isolation_forest_v1.joblib'
+        self.model_path = Path(__file__).resolve().parents[2] / 'models' / 'anomaly' / 'isolation_forest_v1.joblib'
         self.pipeline = None
         self.load_model()
 
     def load_model(self):
         try:
-            if os.path.exists(self.model_path):
+            if self.model_path.exists():
                 self.pipeline = joblib.load(self.model_path)
                 logger.info(f"Loaded anomaly model from {self.model_path}")
             else:

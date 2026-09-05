@@ -4,21 +4,22 @@ import numpy as np
 import shap
 import logging
 from app.schemas import PricePredictionRequest, PricePredictionResponse, ShapBreakdown
-import os
+from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 
 logger = logging.getLogger(__name__)
 
 class PricePredictor:
     def __init__(self):
-        self.model_path = 'ml/models/price/xgboost_price_v1.joblib'
+        self.model_path = Path(__file__).resolve().parents[2] / 'models' / 'price' / 'xgboost_price_v1.joblib'
+        self.model_version = 'xgboost_price_v1'
         self.pipeline = None
         self.explainer = None
         self.load_model()
 
     def load_model(self):
         try:
-            if os.path.exists(self.model_path):
+            if self.model_path.exists():
                 self.pipeline = joblib.load(self.model_path)
                 logger.info(f"Loaded price model from {self.model_path}")
             else:
@@ -55,6 +56,7 @@ class PricePredictor:
                 predicted_rate_inr_per_kg=self.format_money(rate),
                 predicted_total_inr=self.format_money(total),
                 confidence=0.1,  # Low confidence for fallback
+                model_version='fallback-price-v1',
                 shap_breakdown=[ShapBreakdown(factor="fallback_reference", contribution=rate)]
             )
         
@@ -98,6 +100,7 @@ class PricePredictor:
                 predicted_rate_inr_per_kg=self.format_money(pred_rate),
                 predicted_total_inr=self.format_money(pred_total),
                 confidence=0.85, # Synthetic deterministic confidence
+                model_version=self.model_version,
                 shap_breakdown=shap_breakdown
             )
 
@@ -109,6 +112,7 @@ class PricePredictor:
                 predicted_rate_inr_per_kg=self.format_money(rate),
                 predicted_total_inr=self.format_money(total),
                 confidence=0.0,
+                model_version='fallback-price-error-v1',
                 shap_breakdown=[ShapBreakdown(factor="fallback_due_to_error", contribution=rate)]
             )
 

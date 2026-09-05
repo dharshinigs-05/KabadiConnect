@@ -78,10 +78,9 @@ export async function predictPrice(features: {
       throw new Error(`ML service returned ${response.status}`);
     }
 
-    const data = (await response.json()) as Omit<PricePrediction, 'model_version' | 'source'>;
+    const data = (await response.json()) as Omit<PricePrediction, 'source'>;
     return {
       ...data,
-      model_version: 'ml-service',
       source: 'ml',
     };
   } catch (error) {
