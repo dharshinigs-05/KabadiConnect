@@ -130,17 +130,35 @@ paths:
       responses:
         '200': { description: Transaction after valid immediate transition, content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } }
         '409': { $ref: '#/components/responses/InvalidStateTransition' }
+  /transactions/{id}/pickup:
+    put:
+      operationId: scheduleTransactionPickup
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PickupScheduleRequest' } } } }
+      responses:
+        '200': { description: Scheduled pickup, content: { application/json: { schema: { $ref: '#/components/schemas/PickupSchedule' } } } }
+        '409': { $ref: '#/components/responses/InvalidStateTransition' }
   /transactions/{id}/risk:
     get:
       operationId: getTransactionRisk
       parameters: [ { $ref: '#/components/parameters/Id' } ]
       responses: { '200': { description: Cached anomaly result, content: { application/json: { schema: { $ref: '#/components/schemas/RiskResult' } } } } }
   /transactions/{id}/trace-events:
+    get:
+      operationId: listTransactionTraceEvents
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: Chronological transaction history, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEventList' } } } } }
     post:
       operationId: createTraceEvent
       parameters: [ { $ref: '#/components/parameters/Id' } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEventCreate' } } } }
       responses: { '201': { description: Appended trace event, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEvent' } } } } }
+  /transactions/{id}/handover:
+    post:
+      operationId: recordVerifiedHandover
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HandoverCreate' } } } }
+      responses: { '201': { description: Handover trace event with verified weight persisted on the lot, content: { application/json: { schema: { $ref: '#/components/schemas/TraceEvent' } } } } }
   /trace-events/{id}/confirm:
     post:
       operationId: confirmHandover
@@ -153,6 +171,10 @@ paths:
       parameters: [ { $ref: '#/components/parameters/Id' } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PaymentCreate' } } } }
       responses: { '201': { description: Payment, content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } } }
+    get:
+      operationId: listTransactionPayments
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: Transaction payment history, content: { application/json: { schema: { $ref: '#/components/schemas/PaymentList' } } } } }
   /collectors/me/earnings:
     get:
       operationId: getMyEarnings
@@ -183,6 +205,7 @@ components:
     Money: { type: string, pattern: '^-?(?:0|[1-9]\\d*)\\.\\d{2}$', description: Decimal INR serialized as a string; never a JSON number. }
     MaterialCategory: { type: string, enum: [crt, lcd_panel, pcb, cable, battery, motor, magnet_assembly, mixed_plastic, other] }
     TransactionStatus: { type: string, enum: [accepted, pickup_scheduled, handed_over, confirmed, paid, recycled, cancelled] }
+    PickupStatus: { type: string, enum: [scheduled, completed, cancelled] }
     Error: { type: object, additionalProperties: false, required: [error], properties: { error: { type: object, additionalProperties: false, required: [code, message], properties: { code: { type: string }, message: { type: string } } } } }
     OtpRequest: { type: object, additionalProperties: false, required: [phone_number], properties: { phone_number: { type: string } } }
     OtpVerifyRequest: { type: object, additionalProperties: false, required: [phone_number, otp], properties: { phone_number: { type: string }, otp: { type: string } } }
@@ -195,8 +218,13 @@ components:
     OfferCreate: { type: object, additionalProperties: false, required: [offered_rate_inr_per_kg, offered_total_inr, pickup_available, expires_at], properties: { offered_rate_inr_per_kg: { $ref: '#/components/schemas/Money' }, offered_total_inr: { $ref: '#/components/schemas/Money' }, pickup_available: { type: boolean }, expires_at: { $ref: '#/components/schemas/Timestamp' } } }
     OfferList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/Offer' } }, next_cursor: { type: [string, 'null'] } } }
     TransactionList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }, next_cursor: { type: [string, 'null'] } } }
-    PaymentCreate: { type: object, additionalProperties: false, required: [amount_inr, method, status, confirmed_by_collector, confirmed_by_recycler], properties: { amount_inr: { $ref: '#/components/schemas/Money' }, method: { type: string, enum: [cash, upi, bank_transfer] }, status: { type: string, enum: [pending, cash_collected, upi_paid, bank_transfer] }, reference: { type: [string, 'null'] }, confirmed_by_collector: { type: boolean }, confirmed_by_recycler: { type: boolean } } }
-    TraceEventCreate: { type: object, additionalProperties: false, required: [event_type, photo_urls, gps, timestamp], properties: { event_type: { type: string, enum: [lot_created, offer_accepted, pickup_started, handover_photo, handover_confirmed, payment_recorded, recycled_confirmed] }, photo_urls: { type: array, items: { type: string } }, gps: { type: object, required: [lat, lng], properties: { lat: { type: number }, lng: { type: number } } }, timestamp: { $ref: '#/components/schemas/Timestamp' } } }
+    PaymentCreate: { type: object, additionalProperties: false, required: [amount_inr, method, status, confirmed_by_collector, confirmed_by_recycler], properties: { client_uuid: { $ref: '#/components/schemas/UUID' }, amount_inr: { $ref: '#/components/schemas/Money' }, method: { type: string, enum: [cash, upi, bank_transfer] }, status: { type: string, enum: [pending, cash_collected, upi_paid, bank_transfer] }, reference: { type: [string, 'null'] }, confirmed_by_collector: { type: boolean }, confirmed_by_recycler: { type: boolean } } }
+    PaymentList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/Payment' } }, next_cursor: { type: [string, 'null'] } } }
+    PickupScheduleRequest: { type: object, additionalProperties: false, required: [client_uuid, scheduled_date, scheduled_time_window, pickup_location], properties: { client_uuid: { $ref: '#/components/schemas/UUID' }, scheduled_date: { type: string, format: date }, scheduled_time_window: { type: string, minLength: 1 }, pickup_location: { type: object, additionalProperties: false, required: [lat, lng, label], properties: { lat: { type: number, minimum: -90, maximum: 90 }, lng: { type: number, minimum: -180, maximum: 180 }, label: { type: string, minLength: 1 } } }, collector_note: { type: string }, recycler_note: { type: string } } }
+    PickupSchedule: { type: object, additionalProperties: false, required: [id, transaction_id, client_uuid, scheduled_date, scheduled_time_window, pickup_location, status, created_at, updated_at], properties: { id: { $ref: '#/components/schemas/UUID' }, transaction_id: { $ref: '#/components/schemas/UUID' }, client_uuid: { $ref: '#/components/schemas/UUID' }, scheduled_date: { type: string, format: date }, scheduled_time_window: { type: string }, pickup_location: { type: object, required: [lat, lng, label], properties: { lat: { type: number }, lng: { type: number }, label: { type: string } } }, collector_note: { type: [string, 'null'] }, recycler_note: { type: [string, 'null'] }, status: { $ref: '#/components/schemas/PickupStatus' }, created_at: { $ref: '#/components/schemas/Timestamp' }, updated_at: { $ref: '#/components/schemas/Timestamp' } } }
+    HandoverCreate: { type: object, additionalProperties: false, required: [client_uuid, verified_weight_kg, timestamp], properties: { client_uuid: { $ref: '#/components/schemas/UUID' }, verified_weight_kg: { type: number, exclusiveMinimum: 0, maximum: 100000, multipleOf: 0.01 }, timestamp: { $ref: '#/components/schemas/Timestamp' }, notes: { type: string }, photo_urls: { type: array, items: { type: string, minLength: 1 } }, gps: { type: object, required: [lat, lng], properties: { lat: { type: number }, lng: { type: number } } } } }
+    TraceEventCreate: { type: object, additionalProperties: false, required: [event_type, photo_urls, gps, timestamp], properties: { event_type: { type: string, enum: [lot_created, offer_accepted, pickup_scheduled, pickup_started, handover_photo, handover_confirmed, payment_recorded, recycled_confirmed] }, photo_urls: { type: array, items: { type: string } }, gps: { type: object, required: [lat, lng], properties: { lat: { type: number }, lng: { type: number } } }, timestamp: { $ref: '#/components/schemas/Timestamp' } } }
+    TraceEventList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/TraceEvent' } }, next_cursor: { type: [string, 'null'] } } }
     SyncResult: { type: object, additionalProperties: false, required: [client_uuid, server_id, status], properties: { client_uuid: { $ref: '#/components/schemas/UUID' }, server_id: { $ref: '#/components/schemas/UUID' }, status: { type: string } } }
     PriceRecord: { type: object, additionalProperties: false, required: [id, material_category, material_subcategory, location, date, buying_rate_inr_per_kg, market_range_low_inr_per_kg, market_range_high_inr_per_kg, recycler_id, source], properties: { id: { $ref: '#/components/schemas/UUID' }, material_category: { $ref: '#/components/schemas/MaterialCategory' }, material_subcategory: { type: string }, location: { type: string }, date: { type: string, format: date }, buying_rate_inr_per_kg: { $ref: '#/components/schemas/Money' }, market_range_low_inr_per_kg: { $ref: '#/components/schemas/Money' }, market_range_high_inr_per_kg: { $ref: '#/components/schemas/Money' }, recycler_id: { type: [string, 'null'], format: uuid }, source: { type: string, enum: [seed, live] } } }
     PriceList: { type: object, additionalProperties: false, required: [items, next_cursor], properties: { items: { type: array, items: { $ref: '#/components/schemas/PriceRecord' } }, next_cursor: { type: [string, 'null'] } } }

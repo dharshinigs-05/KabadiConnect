@@ -7,7 +7,7 @@
   "required": ["id", "transaction_id", "lot_id", "event_type", "photo_urls", "gps", "timestamp", "actor_user_id", "handover_reference_code", "record_hash", "recorded_by"],
   "properties": {
     "id": { "type": "string", "format": "uuid" }, "transaction_id": { "type": "string", "format": "uuid" }, "lot_id": { "type": "string", "format": "uuid" },
-    "event_type": { "enum": ["lot_created", "offer_accepted", "pickup_started", "handover_photo", "handover_confirmed", "payment_recorded", "recycled_confirmed"] },
+    "event_type": { "enum": ["lot_created", "offer_accepted", "pickup_scheduled", "pickup_started", "handover_photo", "handover_confirmed", "payment_recorded", "recycled_confirmed"] },
     "photo_urls": { "type": "array", "items": { "type": "string", "minLength": 1 } }, "gps": { "$ref": "#/$defs/location" }, "timestamp": { "$ref": "#/$defs/timestamp" }, "actor_user_id": { "type": "string", "format": "uuid" },
     "handover_reference_code": { "type": ["string", "null"] }, "record_hash": { "type": ["string", "null"] }, "recorded_by": { "enum": ["collector", "recycler"] }
   },

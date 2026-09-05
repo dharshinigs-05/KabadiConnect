@@ -73,6 +73,21 @@ export const transactionStatusSchema = z.object({
   status: z.enum(TRANSACTION_STATUSES),
 });
 
+const pickupLocation = location.extend({ label: z.string().min(1) });
+
+export const pickupScheduleSchema = z.object({
+  client_uuid: uuid,
+  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    const today = new Date().toISOString().slice(0, 10);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value && value >= today;
+  }, 'must be a valid non-past calendar date'),
+  scheduled_time_window: z.string().min(1),
+  pickup_location: pickupLocation,
+  collector_note: z.string().optional(),
+  recycler_note: z.string().optional(),
+});
+
 export const traceEventCreateSchema = z.object({
   event_type: z.enum(TRACE_EVENT_TYPES),
   photo_urls: z.array(z.string().min(1)),
@@ -84,7 +99,17 @@ export const handoverConfirmSchema = z.object({
   handover_reference_code: z.string().min(1),
 });
 
+export const handoverCreateSchema = z.object({
+  client_uuid: uuid,
+  verified_weight_kg: z.number().positive().max(100000).refine((value) => Number.isInteger(value * 100), 'must have at most two decimal places'),
+  timestamp: z.string().datetime(),
+  notes: z.string().optional(),
+  photo_urls: z.array(z.string().min(1)).optional().default([]),
+  gps: location.optional(),
+});
+
 export const paymentCreateSchema = z.object({
+  client_uuid: uuid.optional(),
   amount_inr: money,
   method: z.enum(PAYMENT_METHODS),
   status: z.enum(PAYMENT_STATUSES),

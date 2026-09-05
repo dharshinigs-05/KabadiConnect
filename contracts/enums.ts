@@ -20,6 +20,9 @@ export type OfferStatus = (typeof OFFER_STATUSES)[number];
 export const TRANSACTION_STATUSES = ['accepted', 'pickup_scheduled', 'handed_over', 'confirmed', 'paid', 'recycled', 'cancelled'] as const;
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
 
+export const PICKUP_STATUSES = ['scheduled', 'completed', 'cancelled'] as const;
+export type PickupStatus = (typeof PICKUP_STATUSES)[number];
+
 export const PAYMENT_STATUSES = ['pending', 'cash_collected', 'upi_paid', 'bank_transfer'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
@@ -38,7 +41,7 @@ export type MaterialCategory = (typeof MATERIAL_CATEGORIES)[number];
 export const USER_ROLES = ['collector', 'recycler', 'admin'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-export const TRACE_EVENT_TYPES = ['lot_created', 'offer_accepted', 'pickup_started', 'handover_photo', 'handover_confirmed', 'payment_recorded', 'recycled_confirmed'] as const;
+export const TRACE_EVENT_TYPES = ['lot_created', 'offer_accepted', 'pickup_scheduled', 'pickup_started', 'handover_photo', 'handover_confirmed', 'payment_recorded', 'recycled_confirmed'] as const;
 export type TraceEventType = (typeof TRACE_EVENT_TYPES)[number];
 
 export const LANGUAGES = ['hi', 'mr', 'en'] as const;

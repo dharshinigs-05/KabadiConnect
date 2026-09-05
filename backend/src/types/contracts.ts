@@ -64,6 +64,20 @@ export interface TransactionRow {
   updated_at: Date;
 }
 
+export interface PickupScheduleRow {
+  id: string;
+  transaction_id: string;
+  client_uuid: string;
+  scheduled_date: string;
+  scheduled_time_window: string;
+  pickup_location: { lat: number; lng: number; label: string };
+  collector_note: string | null;
+  recycler_note: string | null;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface PaymentRow {
   id: string;
   transaction_id: string;

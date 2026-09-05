@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { query, withTransaction } from '../lib/db.js';
-import { mapPayment, mapTraceEvent, mapTransaction } from '../mappers/index.js';
+import { mapPayment, mapPickupSchedule, mapTraceEvent, mapTransaction } from '../mappers/index.js';
 import {
   badRequest,
   conflict,
@@ -10,7 +10,7 @@ import {
 import { multiplyMoney, parseMoney, moneyEquals } from '../lib/money.js';
 import { checkAnomaly } from '../services/ml.adapter.js';
 import type { AuthUser } from '../middleware/auth.js';
-import type { PaymentRow, TraceEventRow, TransactionRow } from '../types/contracts.js';
+import type { PaymentRow, PickupScheduleRow, TraceEventRow, TransactionRow } from '../types/contracts.js';
 import { emitToUser, emitToRecycler } from '../socket/events.js';
 import {
   decodeCursor,
@@ -23,12 +23,17 @@ import { isValidTransactionTransition } from '../lib/transactionStateMachine.js'
 import type { z } from 'zod';
 import type {
   paymentCreateSchema,
+  handoverCreateSchema,
+  pickupScheduleSchema,
   traceEventCreateSchema,
   transactionStatusSchema,
 } from '../validators/schemas.js';
 
 type TraceEventInput = z.infer<typeof traceEventCreateSchema>;
 type PaymentInput = z.infer<typeof paymentCreateSchema>;
+type PickupScheduleInput = z.infer<typeof pickupScheduleSchema>;
+type HandoverInput = z.infer<typeof handoverCreateSchema>;
+type LotWeightRow = { estimated_weight_kg: string };
 
 async function getTransactionRow(id: string): Promise<TransactionRow> {
   const result = await query<TransactionRow>('SELECT * FROM transactions WHERE id = $1', [id]);
@@ -108,6 +113,10 @@ export async function transitionStatus(
   const tx = await getTransactionRow(id);
   await assertTransactionAccess(tx, user);
 
+  if (['pickup_scheduled', 'handed_over', 'confirmed', 'paid'].includes(newStatus)) {
+    throw conflict('Use the workflow endpoint for this lifecycle transition', 'INVALID_STATE_TRANSITION');
+  }
+
   const allowed = isValidTransactionTransition(tx.status, newStatus);
   if (!allowed) {
     throw conflict(
@@ -142,6 +151,217 @@ export async function transitionStatus(
   });
 
   return updated;
+}
+
+export async function schedulePickup(transactionId: string, user: AuthUser, input: PickupScheduleInput) {
+  if (user.role !== 'collector' && user.role !== 'recycler') {
+    throw forbidden('Collector or recycler role required');
+  }
+
+  return withTransaction(async (client) => {
+    const txResult = await client.query<TransactionRow>(
+      'SELECT * FROM transactions WHERE id = $1 FOR UPDATE',
+      [transactionId],
+    );
+    const tx = txResult.rows[0];
+    if (!tx) {
+      throw notFound('Transaction not found');
+    }
+    await assertTransactionAccess(tx, user);
+    if (tx.status !== 'accepted' && tx.status !== 'pickup_scheduled') {
+      throw conflict(`Pickup cannot be scheduled from ${tx.status} state`, 'INVALID_STATE_TRANSITION');
+    }
+
+    const reusedKey = await client.query<{ transaction_id: string }>(
+      'SELECT transaction_id FROM pickup_schedules WHERE client_uuid = $1',
+      [input.client_uuid],
+    );
+    if (reusedKey.rows[0] && reusedKey.rows[0].transaction_id !== transactionId) {
+      throw conflict('Idempotency key already belongs to another pickup', 'IDEMPOTENCY_CONFLICT');
+    }
+
+    const existing = await client.query<PickupScheduleRow>(
+      'SELECT * FROM pickup_schedules WHERE transaction_id = $1 FOR UPDATE',
+      [transactionId],
+    );
+    const wasScheduled = existing.rows.length > 0;
+    const scheduleResult = await client.query<PickupScheduleRow>(
+      `INSERT INTO pickup_schedules (
+        transaction_id, client_uuid, scheduled_date, scheduled_time_window,
+        pickup_location, collector_note, recycler_note
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (transaction_id) DO UPDATE SET
+        client_uuid = EXCLUDED.client_uuid,
+        scheduled_date = EXCLUDED.scheduled_date,
+        scheduled_time_window = EXCLUDED.scheduled_time_window,
+        pickup_location = EXCLUDED.pickup_location,
+        collector_note = EXCLUDED.collector_note,
+        recycler_note = EXCLUDED.recycler_note,
+        status = 'scheduled', updated_at = NOW()
+      RETURNING *`,
+      [
+        transactionId,
+        input.client_uuid,
+        input.scheduled_date,
+        input.scheduled_time_window,
+        JSON.stringify(input.pickup_location),
+        input.collector_note ?? null,
+        input.recycler_note ?? null,
+      ],
+    );
+
+    if (tx.status === 'accepted') {
+      await client.query(
+        `UPDATE transactions SET status = 'pickup_scheduled', updated_at = NOW() WHERE id = $1`,
+        [transactionId],
+      );
+    }
+
+    if (!wasScheduled) {
+      await client.query(
+        `INSERT INTO trace_events (transaction_id, lot_id, event_type, actor_user_id, recorded_by, timestamp)
+         VALUES ($1, $2, 'pickup_scheduled', $3, $4, NOW())`,
+        [transactionId, tx.lot_id, user.id, user.role],
+      );
+    }
+
+    const schedule = mapPickupSchedule(scheduleResult.rows[0]);
+    emitToUser(tx.collector_id, 'transaction:status_changed', {
+      transaction_id: transactionId,
+      status: 'pickup_scheduled',
+    });
+    emitToRecycler(tx.recycler_id, 'transaction:status_changed', {
+      transaction_id: transactionId,
+      status: 'pickup_scheduled',
+    });
+    return schedule;
+  });
+}
+
+export async function listTraceEvents(transactionId: string, user: AuthUser, cursor?: string) {
+  const tx = await getTransactionRow(transactionId);
+  await assertTransactionAccess(tx, user);
+  const decoded = decodeCursor(cursor);
+  const params: unknown[] = [transactionId, PAGE_SIZE + 1];
+  let sql = 'SELECT * FROM trace_events WHERE transaction_id = $1';
+  let paramIdx = 3;
+  if (decoded) {
+    sql += ` AND (timestamp, id) > ($${paramIdx}::timestamptz, $${paramIdx + 1}::uuid)`;
+    params.push(decoded.createdAt, decoded.id);
+    paramIdx += 2;
+  }
+  sql += ` ORDER BY timestamp ASC, id ASC LIMIT $2`;
+  const result = await query<TraceEventRow>(sql, params);
+  const rows = result.rows.slice(0, PAGE_SIZE);
+  const items = await Promise.all(rows.map(async (row) => mapTraceEvent(row, await getTraceEventPhotoUrls(row.id))));
+  return {
+    items,
+    next_cursor: result.rows.length > PAGE_SIZE
+      ? encodeCursor(rows[rows.length - 1].timestamp, rows[rows.length - 1].id)
+      : null,
+  };
+}
+
+export async function listPayments(transactionId: string, user: AuthUser, cursor?: string) {
+  const tx = await getTransactionRow(transactionId);
+  await assertTransactionAccess(tx, user);
+  const decoded = decodeCursor(cursor);
+  const params: unknown[] = [transactionId, PAGE_SIZE + 1];
+  let sql = 'SELECT * FROM payments WHERE transaction_id = $1';
+  let paramIdx = 3;
+  if (decoded) {
+    sql += ` AND (recorded_at, id) < ($${paramIdx}::timestamptz, $${paramIdx + 1}::uuid)`;
+    params.push(decoded.createdAt, decoded.id);
+    paramIdx += 2;
+  }
+  sql += ` ORDER BY recorded_at DESC, id DESC LIMIT $2`;
+  const result = await query<PaymentRow>(sql, params);
+  const rows = result.rows.slice(0, PAGE_SIZE);
+  return {
+    items: rows.map(mapPayment),
+    next_cursor: result.rows.length > PAGE_SIZE
+      ? encodeCursor(rows[rows.length - 1].recorded_at, rows[rows.length - 1].id)
+      : null,
+  };
+}
+
+export async function recordVerifiedHandover(transactionId: string, user: AuthUser, input: HandoverInput) {
+  if (user.role !== 'recycler' || !user.recyclerId) {
+    throw forbidden('Recycler role required');
+  }
+
+  const result = await withTransaction(async (client) => {
+    const txResult = await client.query<TransactionRow>(
+      'SELECT * FROM transactions WHERE id = $1 FOR UPDATE',
+      [transactionId],
+    );
+    const tx = txResult.rows[0];
+    if (!tx) {
+      throw notFound('Transaction not found');
+    }
+    if (tx.recycler_id !== user.recyclerId) {
+      throw forbidden('Recycler not authorized for this transaction');
+    }
+    const replay = await client.query<TraceEventRow>(
+      `SELECT * FROM trace_events WHERE transaction_id = $1 AND client_uuid = $2`,
+      [transactionId, input.client_uuid],
+    );
+    if (replay.rows[0]) {
+      if (replay.rows[0].event_type !== 'handover_photo') {
+        throw conflict('Idempotency key already used for another event');
+      }
+      return { event: replay.rows[0], replayed: true };
+    }
+    if (tx.status !== 'pickup_scheduled') {
+      throw conflict('Handover requires a pickup_scheduled transaction', 'INVALID_STATE_TRANSITION');
+    }
+
+    const lotResult = await client.query<LotWeightRow>(
+      'SELECT estimated_weight_kg FROM lots WHERE id = $1 FOR UPDATE',
+      [tx.lot_id],
+    );
+    if (!lotResult.rows[0]) {
+      throw notFound('Lot not found');
+    }
+    const handoverCode = generateHandoverCode();
+    const recordHash = generateRecordHash({
+      transaction_id: transactionId,
+      verified_weight_kg: input.verified_weight_kg,
+      timestamp: input.timestamp,
+      notes: input.notes ?? null,
+    });
+    const eventResult = await client.query<TraceEventRow>(
+      `INSERT INTO trace_events (
+        client_uuid, transaction_id, lot_id, event_type, gps, timestamp,
+        actor_user_id, handover_reference_code, record_hash, recorded_by
+      ) VALUES ($1,$2,$3,'handover_photo',$4,$5,$6,$7,$8,'recycler') RETURNING *`,
+      [input.client_uuid, transactionId, tx.lot_id, input.gps ? JSON.stringify(input.gps) : null,
+        input.timestamp, user.id, handoverCode, recordHash],
+    );
+    const finalTotal = multiplyMoney(tx.agreed_rate_inr_per_kg, input.verified_weight_kg);
+    await client.query(
+      `UPDATE lots SET verified_weight_kg = $1, weight_status = 'verified' WHERE id = $2`,
+      [input.verified_weight_kg.toFixed(2), tx.lot_id],
+    );
+    await client.query(
+      `UPDATE transactions SET final_weight_kg = $1, final_total_inr = $2, status = 'handed_over', updated_at = NOW() WHERE id = $3`,
+      [input.verified_weight_kg.toFixed(2), finalTotal, transactionId],
+    );
+    return { event: eventResult.rows[0], replayed: false };
+  });
+
+  if (!result.replayed) {
+    await insertTraceEventPhotos(result.event.id, input.photo_urls);
+    emitToUser((await getTransactionRow(transactionId)).collector_id, 'transaction:status_changed', {
+      transaction_id: transactionId,
+      status: 'handed_over',
+    });
+    emitToRecycler(user.recyclerId, 'transaction:status_changed', {
+      transaction_id: transactionId,
+      status: 'handed_over',
+    });
+  }
+  return mapTraceEvent(result.event, result.replayed ? await getTraceEventPhotoUrls(result.event.id) : input.photo_urls);
 }
 
 export async function getTransactionRisk(id: string, user: AuthUser) {
@@ -188,21 +408,11 @@ export async function createTraceEvent(
     throw forbidden('Recycler not authorized for transaction');
   }
 
-  let handoverCode: string | null = null;
-  let recordHash: string | null = null;
-
+  if (input.event_type === 'pickup_scheduled') {
+    throw badRequest('Use the pickup scheduling endpoint to record pickup_scheduled events');
+  }
   if (input.event_type === 'handover_photo') {
-    if (tx.status !== 'pickup_scheduled') {
-      throw conflict('Transaction must be in pickup_scheduled state to record handover', 'INVALID_STATE_TRANSITION');
-    }
-    handoverCode = generateHandoverCode();
-    recordHash = generateRecordHash({
-      transaction_id: transactionId,
-      lot_id: tx.lot_id,
-      gps: input.gps,
-      timestamp: input.timestamp,
-      handover_reference_code: handoverCode,
-    });
+    throw badRequest('Use the verified handover endpoint to record handover_photo events');
   }
 
   const result = await query<TraceEventRow>(
@@ -218,27 +428,13 @@ export async function createTraceEvent(
       JSON.stringify(input.gps),
       input.timestamp,
       user.id,
-      handoverCode,
-      recordHash,
+      null,
+      null,
       recordedBy,
     ],
   );
 
   await insertTraceEventPhotos(result.rows[0].id, input.photo_urls);
-
-  if (input.event_type === 'handover_photo') {
-    await query(`UPDATE transactions SET status = 'handed_over', updated_at = NOW() WHERE id = $1`, [
-      transactionId,
-    ]);
-    emitToUser(tx.collector_id, 'transaction:status_changed', {
-      transaction_id: transactionId,
-      status: 'handed_over',
-    });
-    emitToRecycler(tx.recycler_id, 'transaction:status_changed', {
-      transaction_id: transactionId,
-      status: 'handed_over',
-    });
-  }
 
   const photoUrls = await getTraceEventPhotoUrls(result.rows[0].id);
   return mapTraceEvent(result.rows[0], photoUrls);
@@ -334,14 +530,25 @@ export async function recordPayment(transactionId: string, user: AuthUser, input
     throw badRequest('reference is required for non-cash payments');
   }
 
+  if (input.client_uuid) {
+    const replay = await query<PaymentRow>(
+      'SELECT * FROM payments WHERE client_uuid = $1 AND transaction_id = $2',
+      [input.client_uuid, transactionId],
+    );
+    if (replay.rows[0]) {
+      return mapPayment(replay.rows[0]);
+    }
+  }
+
   const result = await query<PaymentRow>(
     `INSERT INTO payments (
-      transaction_id, amount_inr, method, status, reference,
+      transaction_id, client_uuid, amount_inr, method, status, reference,
       confirmed_by_collector, confirmed_by_recycler
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
     RETURNING *`,
     [
       transactionId,
+      input.client_uuid ?? null,
       input.amount_inr,
       input.method,
       input.status,

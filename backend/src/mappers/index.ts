@@ -8,6 +8,7 @@ import type {
   RecyclerRow,
   PriceRow,
   SafetyGuideRow,
+  PickupScheduleRow,
 } from '../types/contracts.js';
 
 function toIso(value: Date | string | null | undefined): string | null {
@@ -82,6 +83,22 @@ export function mapPayment(row: PaymentRow) {
     confirmed_by_collector: row.confirmed_by_collector,
     confirmed_by_recycler: row.confirmed_by_recycler,
     recorded_at: toIso(row.recorded_at)!,
+  };
+}
+
+export function mapPickupSchedule(row: PickupScheduleRow) {
+  return {
+    id: row.id,
+    transaction_id: row.transaction_id,
+    client_uuid: row.client_uuid,
+    scheduled_date: row.scheduled_date,
+    scheduled_time_window: row.scheduled_time_window,
+    pickup_location: row.pickup_location,
+    collector_note: row.collector_note,
+    recycler_note: row.recycler_note,
+    status: row.status,
+    created_at: toIso(row.created_at)!,
+    updated_at: toIso(row.updated_at)!,
   };
 }
 

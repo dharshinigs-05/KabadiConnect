@@ -144,9 +144,29 @@ create table transactions (
   unique (lot_id, id)
 );
 
+create table pickup_schedules (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null unique references transactions(id) on delete cascade,
+  client_uuid uuid not null unique,
+  scheduled_date date not null,
+  scheduled_time_window text not null check (length(trim(scheduled_time_window)) > 0),
+  pickup_location jsonb not null check (
+    jsonb_typeof(pickup_location) = 'object'
+    and (pickup_location->>'lat')::numeric between -90 and 90
+    and (pickup_location->>'lng')::numeric between -180 and 180
+    and length(trim(pickup_location->>'label')) > 0
+  ),
+  collector_note text,
+  recycler_note text,
+  status text not null default 'scheduled' check (status in ('scheduled', 'completed', 'cancelled')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table payments (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references transactions(id) on delete cascade,
+  client_uuid uuid,
   amount_inr numeric(12,2) not null check (amount_inr > 0),
   method text not null check (method in ('cash', 'upi', 'bank_transfer')),
   status text not null default 'pending' check (status in ('pending', 'cash_collected', 'upi_paid', 'bank_transfer')),
@@ -163,7 +183,7 @@ create table trace_events (
   client_uuid uuid not null default gen_random_uuid() unique,
   transaction_id uuid not null references transactions(id) on delete cascade,
   lot_id uuid not null references lots(id),
-  event_type text not null check (event_type in ('lot_created', 'offer_accepted', 'pickup_started', 'handover_photo', 'handover_confirmed', 'payment_recorded', 'recycled_confirmed')),
+  event_type text not null check (event_type in ('lot_created', 'offer_accepted', 'pickup_scheduled', 'pickup_started', 'handover_photo', 'handover_confirmed', 'payment_recorded', 'recycled_confirmed')),
   gps jsonb,
   timestamp timestamptz not null default now(),
   actor_user_id uuid not null references users(id),
@@ -214,7 +234,9 @@ create index offers_lot_status_idx on offers(lot_id, status, expires_at);
 create index offers_recycler_idx on offers(recycler_id, status, created_at desc);
 create index transactions_collector_idx on transactions(collector_id, status, updated_at desc);
 create index transactions_recycler_idx on transactions(recycler_id, status, updated_at desc);
+create index pickup_schedules_date_idx on pickup_schedules(scheduled_date, updated_at desc);
 create index payments_transaction_idx on payments(transaction_id, recorded_at desc);
+create unique index payments_client_uuid_idx on payments(client_uuid) where client_uuid is not null;
 create index trace_events_transaction_idx on trace_events(transaction_id, timestamp);
 create index trace_event_photos_event_idx on trace_event_photos(trace_event_id);
 create index ml_predictions_lot_idx on ml_predictions(lot_id, created_at desc);
